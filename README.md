@@ -1,4 +1,4 @@
-### Acathemics
+### Acamethics
 
 This project provides a set of tools for generating question-answer pairs from PDF documents and fine-tuning a T5 language model for specialized question-answering tasks. The system consists of three main components:
 
