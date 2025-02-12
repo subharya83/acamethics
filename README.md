@@ -1,4 +1,4 @@
-# PDF Question-Answer Generation and Fine-tuning
+### Acathemics
 
 This project provides a set of tools for generating question-answer pairs from PDF documents and fine-tuning a T5 language model for specialized question-answering tasks. The system consists of three main components:
 
@@ -18,14 +18,6 @@ This project provides a set of tools for generating question-answer pairs from P
    - Loads a fine-tuned model
    - Generates answers for user-provided questions
    - Supports batch processing of questions
-
-## Requirements
-
-- Python 3.7+
-- PyTorch
-- Transformers
-- pdfplumber
-- datasets
 
 Install the required packages:
 ```bash
