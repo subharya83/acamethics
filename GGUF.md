@@ -1,4 +1,7 @@
-## GGUF architecture/llama.cpp integration
+## Full Compilation Instructions
+
+```markdown
+## GGUF Architecture/llama.cpp Integration - Full Project Setup
 
 ### 1. Install Dependencies
 
@@ -15,8 +18,6 @@ brew install cmake git poppler nlohmann-json
 ```
 
 ### 2. Clone and Build GGML/LLaMA.cpp
-The code depends on the GGML library (from LLaMA.cpp project):
-
 ```bash
 git clone https://github.com/ggerganov/llama.cpp
 cd llama.cpp
@@ -24,105 +25,79 @@ mkdir build
 cd build
 cmake ..
 make -j4
+
+# Copy built libraries to your project
+mkdir -p /path/to/lib
+cp libggml.a libllama.a /path/to/lib/
+
+# Copy headers
+mkdir -p /path/to/your_project/include/ggml
+cp ../ggml.h ../ggml-alloc.h ../ggml-backend.h ../ggml-cuda.h ../ggml-metal.h /path/to/include/ggml/
+cp ../llama.h /path/to/include/
 ```
 
-This will build the necessary GGML libraries. Take note of the build directory location.
-
-### 3. Prepare Your Project Structure
-
-Create a project directory with this structure:
+### 3. Project Structure
 ```
-your_project/
-├── include/           # Header files
-│   ├── ggml/          # From llama.cpp
-│   └── llama.h        # From llama.cpp
-├── src/               # Your source files
-│   └── main.cpp       # The code you provided
-├── lib/               # GGML libraries
-│   └── (from llama.cpp build)
-└── CMakeLists.txt     # Build configuration
-```
-
-### 4. Create a CMakeLists.txt
-
-Here's a basic CMake configuration:
-
-```cmake
-cmake_minimum_required(VERSION 3.15)
-project(pdf_qa_gguf)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Include directories
-include_directories(
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/include/ggml
-)
-
-# Link directories
-link_directories(${CMAKE_SOURCE_DIR}/lib)
-
-# Find required packages
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(POPPLER REQUIRED poppler-cpp)
-
-# Source files
-add_executable(pdf_qa
-    src/main.cpp
-)
-
-# Link libraries
-target_link_libraries(pdf_qa
-    ggml
-    llama
-    ${POPPLER_LIBRARIES}
-    stdc++fs  # For filesystem support
-)
-
-# Copy GGUF model file after build
-add_custom_command(TARGET pdf_qa POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${CMAKE_SOURCE_DIR}/models/t5-small-qa-qg-hl.gguf
-    $<TARGET_FILE_DIR:pdf_qa>/models/
-)
+acamethics/
+├── CMakeLists.txt
+├── include/
+│   ├── ggml/          # GGML headers from llama.cpp
+│   └── llama.h        # LLaMA header from llama.cpp
+├── lib/               # GGML libraries from llama.cpp build
+│   ├── libggml.a
+│   └── libllama.a
+├── models/            # GGUF model files
+│   └── t5-small-qa-qg-hl.gguf
+├── src/
+│   ├── fineTuneSLM.cpp
+│   ├── genQA.cpp
+│   └── querySLM.cpp
+└── README.md
 ```
 
-### 5. Build the Project
-
+### 4. Build the Project
 ```bash
 mkdir build
 cd build
-cmake ..
+cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j4
 ```
 
-### 6. Run the Program
+### 5. Run the Programs
 
-After successful compilation, you can run it with:
-
+#### Fine-tuning the model
 ```bash
-./pdf_qa -i input.pdf -o output.json
+./fineTuneSLM -d /path/to/dataset -o /path/to/output [-m model_name] [-e epochs] [-b batch_size]
+```
+
+#### Generating QA pairs from PDF
+```bash
+./genQA -i input.pdf -o output.json [-w weights_dir]
+```
+
+#### Querying the model
+```bash
+./querySLM -m models/t5-small-qa-qg-hl.gguf --input_path questions.txt --output_path answers.txt
 ```
 
 ### Additional Notes:
 
-1. **Model File**: You'll need to place the GGUF model file (`t5-small-qa-qg-hl.gguf`) in the `models/` directory of your project.
+1. **Model Files**: Place GGUF model files in the `models/` directory before building.
 
-2. **Cross-Platform**: For Windows, you'll need to:
-   - Use Visual Studio with C++17 support
-   - Build GGML/LLaMA.cpp using CMake
-   - Adjust the CMakeLists.txt for Windows paths
+2. **Cross-Platform**:
+   - Windows: Use Visual Studio with C++17 support and adjust paths in CMakeLists.txt
+   - macOS/Linux: Follow standard build instructions
 
 3. **Troubleshooting**:
-   - If you get linker errors, verify all library paths are correct
-   - For Poppler issues, ensure you have the C++ bindings installed (`libpoppler-cpp-dev` on Linux)
-   - If using GPU layers, you'll need CUDA/ROCm installed
+   - Linker errors: Verify library paths in CMakeLists.txt
+   - Missing Poppler: Install `libpoppler-cpp-dev` (Linux) or `poppler` (macOS)
+   - GPU support: Set `n_gpu_layers` in code and have CUDA/ROCm installed
 
-4. **Optimization**: For better performance, you may want to add compiler optimizations to your CMakeLists.txt:
-   ```cmake
-   if(CMAKE_BUILD_TYPE STREQUAL "Release")
-       add_compile_options(-O3 -march=native)
-   endif()
-   ```
+4. **Optimization**:
+   - For best performance, build in Release mode (`-DCMAKE_BUILD_TYPE=Release`)
+   - Enable GPU layers if available by adjusting `n_gpu_layers` in the code
 
+5. **Dependencies**:
+   - Required: llama.cpp (ggml), nlohmann/json
+   - Optional: Poppler (only for genQA)
+```
