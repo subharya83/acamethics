@@ -83,11 +83,26 @@ class QAPairGenerator:
             # Using DistilBERT for extractive QA
             extractive_model_name = "distilbert-base-uncased-distilled-squad"
             
+            # Explicitly load model and tokenizer to ensure they're cached in weights_dir
+            from transformers import AutoModelForQuestionAnswering, AutoTokenizer
+            
+            print(f"Downloading/loading {extractive_model_name} model...")
+            extractive_model = AutoModelForQuestionAnswering.from_pretrained(
+                extractive_model_name, 
+                cache_dir=self.weights_dir
+            )
+            
+            print(f"Downloading/loading {extractive_model_name} tokenizer...")
+            extractive_tokenizer = AutoTokenizer.from_pretrained(
+                extractive_model_name, 
+                cache_dir=self.weights_dir
+            )
+            
+            # Create pipeline with the explicitly loaded model and tokenizer
             extractive_pipeline = pipeline(
                 "question-answering",
-                model=extractive_model_name,
-                tokenizer=extractive_model_name,
-                cache_dir=self.weights_dir,
+                model=extractive_model,
+                tokenizer=extractive_tokenizer,
                 device=0 if torch.cuda.is_available() else -1
             )
             

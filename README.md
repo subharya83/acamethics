@@ -46,21 +46,58 @@ optional arguments:
   -x, --extractive      Enable extractive QA model for better answer generation
 
 ```
-
-```bash
-python genQA.py -i input/input.pdf -o output/output.json -m 0 -w weights
-```
-
-Arguments:
-- `-i, --input`: Path to the input PDF file
-- `-o, --output`: Path to save the generated QA pairs (JSON format)
-- `-w, --weights`: Directory to store model weights (default: "weights")
-
 #### Model Recommendations:
 
 - For Best Quality: Use -m 2 -x (FLAN-T5 + extractive QA)
 - For Speed: Use -m 0 (T5 small)
 - For Balanced Performance: Use -m 1 -x (BART + extractive QA)
+
+#### Sanity check/Unit tests after installation
+
+```bash
+# Run once to download each models (-m 0, -m 1, -m 2)
+python3 genQA.py -i document.pdf -o output.json -m 2 -x -w ./weights
+```
+
+```bash
+# Check directory structure to verify if all weights are downloaded
+tree weights
+
+weights/
+├── models--valhalla--t5-small-qa-qg-hl/        # T5 model (if using -m 0)
+├── models--facebook--bart-large-cnn/           # BART model (if using -m 1)  
+├── models--google--flan-t5-base/               # FLAN-T5 model (if using -m 2)
+└── models--distilbert-base-uncased-distilled-squad/  # Extractive QA model (if using -x)
+```
+
+```bash
+# Running with input data
+python3 genQA.py -i input/CBSE-Class-6-Maths-Chapter-01.pdf -o input/CBSE-Class-6-Maths-Chapter-01.json -m 2 -w weights -x
+
+# Expected results
+Selected model: google/flan-t5-base
+Extractive QA model: ENABLED
+Loading FLAN-T5 Base Model (google/flan-t5-base)...
+...
+Device set to use cpu
+Successfully loaded FLAN-T5 Base Model
+Loading extractive QA model...
+Device set to use cpu
+Successfully loaded extractive QA model
+Models loaded successfully.
+Extracting text from PDF...
+Extracted 13028 characters from PDF.
+Processing text and generating QA pairs...
+
+
+Successfully saved 100 QA pairs to input/CBSE-Class-6-Maths-Chapter-01.json
+Process completed! Generated 100 QA pairs.
+
+Generation Summary:
+  extractive: 70 pairs
+  keyword_extraction: 4 pairs
+  generative: 26 pairs
+```
 
 ### 2. Fine-tune the Model
 
