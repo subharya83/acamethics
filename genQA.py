@@ -21,9 +21,9 @@ class TextProcessor:
     
     def __init__(self):
         self.encoding_fixes = {
-            'â€™': "'", 'â€œ': '"', 'â€': '"', 'â€"': '–', 'â€"': '—',
-            'â€¦': '...', 'â€˜': "'", 'Â': ' ', 'Ã¡': 'á', 'Ã©': 'é',
-            'Â ': ' ', 'Â­': '-'
+            'Ã¢â‚¬â„¢': "'", 'Ã¢â‚¬Å"': '"', 'Ã¢â‚¬': '"', 'Ã¢â‚¬"': 'â€"', 'Ã¢â‚¬"': 'â€"',
+            'Ã¢â‚¬Â¦': '...', 'Ã¢â‚¬Ëœ': "'", 'Ã‚': ' ', 'ÃƒÂ¡': 'Ã¡', 'ÃƒÂ©': 'Ã©',
+            'Ã‚ ': ' ', 'Ã‚Â­': '-'
         }
         
         self.noise_patterns = [
@@ -163,7 +163,7 @@ class QuestionValidator:
             issues.append("Contains statement fragments")
         
         # Check for encoding issues
-        if any(char in question for char in ['â€', 'Â']):
+        if any(char in question for char in ['Ã¢â‚¬', 'Ã‚']):
             issues.append("Contains encoding errors")
         
         # Check for repetitive content
@@ -282,12 +282,18 @@ class EnhancedQAPairGenerator:
             print(f"Error loading extractive model: {e}")
             return None
     
-    def extract_text_from_pdf(self, pdf_path: str, max_pages: int = 10) -> str:
-        """Extract and clean text from PDF"""
+    def extract_text_from_pdf(self, pdf_path: str) -> str:
+        """Extract and clean text from entire PDF"""
         text = ""
         try:
             with pdfplumber.open(pdf_path) as pdf:
-                for i, page in enumerate(pdf.pages[:max_pages]):
+                total_pages = len(pdf.pages)
+                print(f"Processing all {total_pages} pages from PDF...")
+                
+                for i, page in enumerate(pdf.pages):
+                    if (i + 1) % 10 == 0:  # Progress indicator
+                        print(f"Processed {i + 1}/{total_pages} pages...")
+                    
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + " "
@@ -576,16 +582,9 @@ class QAEnhancer:
         self.answer_validator = AnswerValidator()
         self.text_processor = TextProcessor()
     
-    def enhance_qa_json(self, input_json_path: str, output_json_path: str) -> Dict:
-        """Enhance existing QA pairs JSON"""
-        print("Pass 2: Enhancing existing QA pairs...")
-        
-        # Load existing JSON
-        with open(input_json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        qa_pairs = data.get('qa_pairs', [])
-        print(f"Loaded {len(qa_pairs)} existing QA pairs")
+    def enhance_qa_pairs(self, qa_pairs: List[Dict]) -> Tuple[List[Dict], Dict]:
+        """Enhance QA pairs list and return stats"""
+        print("Pass 2: Enhancing QA pairs...")
         
         enhanced_pairs = []
         quality_stats = {'filtered_out': 0, 'enhanced': 0, 'quality_scores': []}
@@ -601,30 +600,7 @@ class QAEnhancer:
                 quality_stats['filtered_out'] += 1
         
         print(f"Enhanced: {quality_stats['enhanced']}, Filtered out: {quality_stats['filtered_out']}")
-        
-        # Update data structure
-        enhanced_data = {
-            "qa_pairs": enhanced_pairs,
-            "total_pairs": len(enhanced_pairs),
-            "metadata": {
-                **data.get('metadata', {}),
-                "enhancement_applied": True,
-                "original_count": len(qa_pairs),
-                "filtered_count": quality_stats['filtered_out']
-            },
-            "quality_stats": {
-                **data.get('quality_stats', {}),
-                "average_quality_score": sum(quality_stats['quality_scores']) / max(len(quality_stats['quality_scores']), 1),
-                "enhancement_stats": quality_stats
-            }
-        }
-        
-        # Save enhanced JSON
-        with open(output_json_path, 'w', encoding='utf-8') as f:
-            json.dump(enhanced_data, f, indent=4, ensure_ascii=False)
-        
-        print(f"Saved enhanced QA pairs to {output_json_path}")
-        return enhanced_data
+        return enhanced_pairs, quality_stats
     
     def _enhance_single_pair(self, pair: Dict) -> Optional[Dict]:
         """Enhance a single QA pair"""
@@ -761,7 +737,7 @@ class QAEnhancer:
         return list(set(keywords))
 
 def main():
-    """Main function to run both passes"""
+    """Main function to run both passes and generate single output file"""
     parser = argparse.ArgumentParser(description="Two-pass QA pair generator with enhancement")
     parser.add_argument("-i", "--input", required=True, help="Path to input PDF file")
     parser.add_argument("-o", "--output", required=True, help="Path for output JSON file")
@@ -771,7 +747,6 @@ def main():
     parser.add_argument("-x", "--extractive", action="store_true", 
                         help="Enable extractive QA model")
     parser.add_argument("--enhance-only", help="Path to existing JSON file to enhance (skip Pass 1)")
-    parser.add_argument("--max-pages", type=int, default=10, help="Maximum pages to process")
     
     args = parser.parse_args()
     
@@ -783,18 +758,45 @@ def main():
     
     print(f"Selected model: {model_names[args.model]}")
     print(f"Extractive QA: {'ENABLED' if args.extractive else 'DISABLED'}")
-    print(f"Max pages: {args.max_pages}")
-    
-    # Determine file paths
-    base_name = os.path.splitext(args.output)[0]
-    pass1_output = f"{base_name}_pass1.json"
-    final_output = args.output
     
     if args.enhance_only:
         # Only run Pass 2 (enhancement)
         print(f"Enhancement-only mode: processing {args.enhance_only}")
+        
+        # Load existing JSON
+        with open(args.enhance_only, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        qa_pairs = data.get('qa_pairs', [])
+        print(f"Loaded {len(qa_pairs)} existing QA pairs")
+        
+        # Enhance the pairs
         enhancer = QAEnhancer()
-        enhancer.enhance_qa_json(args.enhance_only, final_output)
+        enhanced_pairs, quality_stats = enhancer.enhance_qa_pairs(qa_pairs)
+        
+        # Create final output
+        enhanced_data = {
+            "qa_pairs": enhanced_pairs,
+            "total_pairs": len(enhanced_pairs),
+            "metadata": {
+                **data.get('metadata', {}),
+                "enhancement_applied": True,
+                "original_count": len(qa_pairs),
+                "filtered_count": quality_stats['filtered_out']
+            },
+            "quality_stats": {
+                **data.get('quality_stats', {}),
+                "average_quality_score": sum(quality_stats['quality_scores']) / max(len(quality_stats['quality_scores']), 1),
+                "enhancement_stats": quality_stats
+            }
+        }
+        
+        # Save enhanced JSON
+        with open(args.output, 'w', encoding='utf-8') as f:
+            json.dump(enhanced_data, f, indent=4, ensure_ascii=False)
+        
+        print(f"Enhanced QA pairs saved to {args.output}")
+        
     else:
         # Run both passes
         try:
@@ -806,9 +808,9 @@ def main():
             )
             print("Models loaded successfully for Pass 1")
             
-            # Extract and process text
-            print(f"Extracting text from PDF (max {args.max_pages} pages)...")
-            text = generator.extract_text_from_pdf(args.input, args.max_pages)
+            # Extract and process text from entire PDF
+            print("Extracting text from entire PDF...")
+            text = generator.extract_text_from_pdf(args.input)
             
             if not text:
                 print("No text extracted from PDF. Please check the file.")
@@ -823,45 +825,65 @@ def main():
                 print("No QA pairs generated in Pass 1. Please check your input file.")
                 return
             
-            # Save Pass 1 results
-            pass1_data = {
-                "qa_pairs": qa_pairs,
-                "total_pairs": len(qa_pairs),
-                "metadata": {
-                    "model_used": model_names[args.model],
-                    "extractive_enabled": args.extractive,
-                    "max_pages_processed": args.max_pages,
-                    "pass": 1
-                }
-            }
-            
-            with open(pass1_output, 'w', encoding='utf-8') as f:
-                json.dump(pass1_data, f, indent=4, ensure_ascii=False)
-            
-            print(f"Pass 1 completed: {len(qa_pairs)} QA pairs saved to {pass1_output}")
+            print(f"Pass 1 completed: {len(qa_pairs)} QA pairs generated")
             
             # Pass 2: Enhancement
             enhancer = QAEnhancer()
-            enhanced_data = enhancer.enhance_qa_json(pass1_output, final_output)
+            enhanced_pairs, quality_stats = enhancer.enhance_qa_pairs(qa_pairs)
             
-            print(f"Pass 2 completed: {enhanced_data['total_pairs']} enhanced QA pairs saved to {final_output}")
+            # Create final output data structure
+            final_data = {
+                "qa_pairs": enhanced_pairs,
+                "total_pairs": len(enhanced_pairs),
+                "metadata": {
+                    "model_used": model_names[args.model],
+                    "extractive_enabled": args.extractive,
+                    "passes_completed": 2,
+                    "source_file": os.path.basename(args.input),
+                    "original_pass1_count": len(qa_pairs),
+                    "final_enhanced_count": len(enhanced_pairs),
+                    "filtered_count": quality_stats['filtered_out']
+                },
+                "quality_stats": {
+                    "average_quality_score": sum(quality_stats['quality_scores']) / max(len(quality_stats['quality_scores']), 1),
+                    "total_generated": len(qa_pairs),
+                    "total_enhanced": quality_stats['enhanced'],
+                    "total_filtered": quality_stats['filtered_out'],
+                    "enhancement_stats": quality_stats
+                }
+            }
             
-            # Print summary
-            print("\n" + "="*50)
-            print("FINAL SUMMARY")
-            print("="*50)
-            print(f"Original pairs (Pass 1): {len(qa_pairs)}")
-            print(f"Enhanced pairs (Pass 2): {enhanced_data['total_pairs']}")
-            print(f"Filtered out: {enhanced_data['metadata']['filtered_count']}")
-            print(f"Average quality score: {enhanced_data['quality_stats']['average_quality_score']:.2f}")
+            # Save final JSON
+            with open(args.output, 'w', encoding='utf-8') as f:
+                json.dump(final_data, f, indent=4, ensure_ascii=False)
+            
+            print(f"Final QA pairs saved to {args.output}")
+            
+            # Print comprehensive summary
+            print("\n" + "="*60)
+            print("PROCESSING COMPLETE - FINAL SUMMARY")
+            print("="*60)
+            print(f"Source PDF: {os.path.basename(args.input)}")
+            print(f"Model used: {model_names[args.model]}")
+            print(f"Extractive QA: {'Enabled' if args.extractive else 'Disabled'}")
+            print(f"Total characters extracted: {len(text):,}")
+            print()
+            print("PASS 1 RESULTS:")
+            print(f"  Generated QA pairs: {len(qa_pairs)}")
+            print()
+            print("PASS 2 RESULTS:")
+            print(f"  Enhanced pairs: {quality_stats['enhanced']}")
+            print(f"  Filtered out: {quality_stats['filtered_out']}")
+            print(f"  Final pairs in output: {len(enhanced_pairs)}")
+            print(f"  Average quality score: {final_data['quality_stats']['average_quality_score']:.3f}")
             
             # Quality breakdown
-            if enhanced_data['qa_pairs']:
+            if enhanced_pairs:
                 sources = {}
                 types = {}
                 difficulties = {}
                 
-                for pair in enhanced_data['qa_pairs']:
+                for pair in enhanced_pairs:
                     # Source breakdown
                     source = pair.get('source', 'unknown')
                     sources[source] = sources.get(source, 0) + 1
@@ -874,9 +896,14 @@ def main():
                     difficulty = pair.get('difficulty_level', 'basic')
                     difficulties[difficulty] = difficulties.get(difficulty, 0) + 1
                 
-                print(f"\nAnswer sources: {sources}")
-                print(f"Question types: {types}")
-                print(f"Difficulty levels: {difficulties}")
+                print()
+                print("QUALITY BREAKDOWN:")
+                print(f"  Answer sources: {dict(sources)}")
+                print(f"  Question types: {dict(types)}")
+                print(f"  Difficulty levels: {dict(difficulties)}")
+            
+            print(f"\nFinal output file: {args.output}")
+            print("="*60)
             
         except Exception as e:
             print(f"Error during processing: {e}")
