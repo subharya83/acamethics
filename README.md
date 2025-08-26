@@ -28,14 +28,39 @@ pip install torch transformers pdfplumber datasets sentencepiece
 
 ### 1. Generate QA Pairs from PDF
 
+```
+usage: genQA.py [-h] -i INPUT -o OUTPUT [-w WEIGHTS] [-m {0,1,2}] [-x]
+
+Generate QA pairs from a PDF file for SLM fine-tuning.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Path to the input PDF file.
+  -o OUTPUT, --output OUTPUT
+                        Path to the output JSON file.
+  -w WEIGHTS, --weights WEIGHTS
+                        Directory to store model weights.
+  -m {0,1,2}, --model {0,1,2}
+                        Model choice: 0=valhalla/t5-small-qa-qg-hl, 1=facebook/bart-large-cnn, 2=google/flan-t5-base
+  -x, --extractive      Enable extractive QA model for better answer generation
+
+```
+
 ```bash
-python genQA.py -i input/input.pdf -o output/output.json -w weights
+python genQA.py -i input/input.pdf -o output/output.json -m 0 -w weights
 ```
 
 Arguments:
 - `-i, --input`: Path to the input PDF file
 - `-o, --output`: Path to save the generated QA pairs (JSON format)
 - `-w, --weights`: Directory to store model weights (default: "weights")
+
+#### Model Recommendations:
+
+- For Best Quality: Use -m 2 -x (FLAN-T5 + extractive QA)
+- For Speed: Use -m 0 (T5 small)
+- For Balanced Performance: Use -m 1 -x (BART + extractive QA)
 
 ### 2. Fine-tune the Model
 
