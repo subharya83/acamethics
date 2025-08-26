@@ -21,7 +21,7 @@ This project provides a set of tools for generating question-answer pairs from P
 
 Install the required packages:
 ```bash
-pip install torch transformers pdfplumber datasets
+pip install torch transformers pdfplumber datasets sentencepiece
 ```
 
 ## Usage
@@ -29,7 +29,7 @@ pip install torch transformers pdfplumber datasets
 ### 1. Generate QA Pairs from PDF
 
 ```bash
-python genQA.py -i input.pdf -o output.json -w weights
+python genQA.py -i input/input.pdf -o output/output.json -w weights
 ```
 
 Arguments:
