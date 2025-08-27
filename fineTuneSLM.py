@@ -74,19 +74,29 @@ def load_qa_pairs(input_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tune an SLM for 6th-grade math QA")
-    parser.add_argument("-i", "--input-dir", required=True, help="Directory containing JSON files")
+    parser.add_argument("-I", "--input-dir", required=True, help="Directory containing JSON files")
     parser.add_argument("-t", "--tmp-dir", required=True, help="Directory for saving checkpoints")
-    parser.add_argument("-w", "--output-dir", required=True, help="Directory to save final model")
+    parser.add_argument("-w", "--output-dir", required=True, help="Directory to save pre-trained and final model")
     args = parser.parse_args()
+
+    # Ensure output directory exists
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # Check if MPS is available
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load tokenizer and model
+    # Load tokenizer and model, downloading to output-dir
     model_name = "distilbert-base-uncased"
-    tokenizer = DistilBertTokenizer.from_pretrained(model_name)
-    model = DistilBertForQuestionAnswering.from_pretrained(model_name).to(device)
+    print(f"Downloading tokenizer and model to {args.output_dir}")
+    tokenizer = DistilBertTokenizer.from_pretrained(
+        model_name,
+        cache_dir=args.output_dir,
+    )
+    model = DistilBertForQuestionAnswering.from_pretrained(
+        model_name,
+        cache_dir=args.output_dir,
+    ).to(device)
 
     # Load QA pairs
     qa_pairs = load_qa_pairs(args.input_dir)
@@ -124,7 +134,7 @@ def main():
     trainer.train()
 
     # Save the final model
-    print(f"Saving final model to {args.output_dir}")
+    print(f"Saving fine-tuned model to {args.output_dir}")
     model.save_pretrained(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
 
