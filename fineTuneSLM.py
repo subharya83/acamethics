@@ -74,7 +74,7 @@ def load_qa_pairs(input_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tune an SLM for 6th-grade math QA")
-    parser.add_argument("-I", "--input-dir", required=True, help="Directory containing JSON files")
+    parser.add_argument("-i", "--input-dir", required=True, help="Directory containing JSON files")
     parser.add_argument("-t", "--tmp-dir", required=True, help="Directory for saving checkpoints")
     parser.add_argument("-w", "--output-dir", required=True, help="Directory to save pre-trained and final model")
     args = parser.parse_args()
