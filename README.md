@@ -102,15 +102,28 @@ Generation Summary:
 ### 2. Fine-tune the Model
 
 ```bash
-python fineTuneSLM.py -d data_dir -o output_dir [-m model_name] [-e epochs] [-b batch_size]
+python3 fineTuneSLM.py -i input -t tmp -w weights
+Using device: mps
+Downloading tokenizer and model to weights
+tokenizer_config.json: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 48.0/48.0 [00:00<00:00, 24.7kB/s]
+vocab.txt: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 232k/232k [00:00<00:00, 1.13MB/s]
+tokenizer.json: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 466k/466k [00:00<00:00, 3.64MB/s]
+config.json: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 483/483 [00:00<00:00, 714kB/s]
+model.safetensors: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 268M/268M [00:00<00:00, 321MB/s]
+Some weights of DistilBertForQuestionAnswering were not initialized from the model checkpoint at distilbert-base-uncased and are newly initialized: ['qa_outputs.bias', 'qa_outputs.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Loading JSON files: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 52/52 [00:00<00:00, 1380.05it/s]
+Loaded 890 QA pairs
+Starting fine-tuning...
+  0%|                                                                                                                                                                                   | 0/336 [00:00<?, ?it/s]/Users/subhabrata.bhattacharya/Library/Python/3.9/lib/python/site-packages/torch/utils/data/dataloader.py:684: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{'loss': 5.8135, 'grad_norm': 10.624452590942383, 'learning_rate': 9.900000000000002e-06, 'epoch': 0.89}                                                                                                        
+{'loss': 3.2865, 'grad_norm': 12.551226615905762, 'learning_rate': 1.9900000000000003e-05, 'epoch': 1.79}                                                                                                       
+{'loss': 2.1938, 'grad_norm': 22.015884399414062, 'learning_rate': 2.9900000000000002e-05, 'epoch': 2.68}                                                                                                       
+{'train_runtime': 317.6801, 'train_samples_per_second': 8.405, 'train_steps_per_second': 1.058, 'train_loss': 3.5600887026105608, 'epoch': 3.0}                                                                 
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 336/336 [05:17<00:00,  1.06it/s]
+Saving fine-tuned model to weights
 ```
-
-Arguments:
-- `-d, --data_dir`: Directory containing QA pairs in JSON format
-- `-o, --output_dir`: Directory to save the fine-tuned model
-- `-m, --model_name`: Pre-trained model to fine-tune (default: "t5-small")
-- `-e, --epochs`: Number of training epochs (default: 3)
-- `-b, --batch_size`: Training batch size (default: 8)
 
 ### 3. Generate Answers Using Fine-tuned Model
 
