@@ -1,67 +1,118 @@
-import os
 import argparse
+import json
+import os
+from transformers import (
+    DistilBertTokenizer,
+    DistilBertForQuestionAnswering,
+    Trainer,
+    TrainingArguments,
+)
 import torch
-from transformers import T5ForConditionalGeneration, T5Tokenizer, Trainer, TrainingArguments
-from datasets import Dataset
+from torch.utils.data import Dataset
+from tqdm import tqdm
 
-# Load the dataset from the directory
-def load_dataset(data_dir):
+# Custom Dataset for QA pairs
+class MathQADataset(Dataset):
+    def __init__(self, qa_pairs, tokenizer, max_length=512):
+        self.qa_pairs = qa_pairs
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.qa_pairs)
+
+    def __getitem__(self, idx):
+        qa_pair = self.qa_pairs[idx]
+        question = qa_pair["question"]
+        answer = qa_pair["answer"]
+        context = qa_pair["context"]
+
+        # Tokenize inputs
+        encoding = self.tokenizer(
+            question,
+            context,
+            max_length=self.max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+
+        # Find start and end positions of the answer in the tokenized context
+        answer_tokens = self.tokenizer(answer, add_special_tokens=False)["input_ids"]
+        context_tokens = encoding["input_ids"][0]
+
+        start_positions = []
+        end_positions = []
+
+        # Search for answer tokens in context
+        for i in range(len(context_tokens) - len(answer_tokens) + 1):
+            if context_tokens[i : i + len(answer_tokens)].tolist() == answer_tokens:
+                start_positions.append(i)
+                end_positions.append(i + len(answer_tokens) - 1)
+                break
+        else:
+            # If answer not found, use default positions (CLS token)
+            start_positions.append(0)
+            end_positions.append(0)
+
+        return {
+            "input_ids": encoding["input_ids"].squeeze(),
+            "attention_mask": encoding["attention_mask"].squeeze(),
+            "start_positions": start_positions[0] if start_positions else 0,
+            "end_positions": end_positions[0] if end_positions else 0,
+        }
+
+def load_qa_pairs(input_dir):
     qa_pairs = []
-    for filename in os.listdir(data_dir):
+    for filename in tqdm(os.listdir(input_dir), desc="Loading JSON files"):
         if filename.endswith(".json"):
-            with open(os.path.join(data_dir, filename), "r") as f:
-                qa_pairs.extend(json.load(f))
+            file_path = os.path.join(input_dir, filename)
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                qa_pairs.extend(data.get("qa_pairs", []))
     return qa_pairs
 
-# Preprocess the dataset for fine-tuning
-def preprocess_dataset(qa_pairs, tokenizer, max_length=512):
-    inputs = []
-    targets = []
-    for pair in qa_pairs:
-        inputs.append(f"generate questions: {pair['context']}")
-        targets.append(pair["question"] + " " + pair["answer"])  # Combine question and answer
+def main():
+    parser = argparse.ArgumentParser(description="Fine-tune an SLM for 6th-grade math QA")
+    parser.add_argument("-i", "--input-dir", required=True, help="Directory containing JSON files")
+    parser.add_argument("-t", "--tmp-dir", required=True, help="Directory for saving checkpoints")
+    parser.add_argument("-w", "--output-dir", required=True, help="Directory to save final model")
+    args = parser.parse_args()
 
-    # Tokenize the inputs and targets
-    tokenized_inputs = tokenizer(inputs, max_length=max_length, truncation=True, padding="max_length", return_tensors="pt")
-    tokenized_targets = tokenizer(targets, max_length=max_length, truncation=True, padding="max_length", return_tensors="pt")
+    # Check if MPS is available
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"Using device: {device}")
 
-    return {
-        "input_ids": tokenized_inputs["input_ids"],
-        "attention_mask": tokenized_inputs["attention_mask"],
-        "labels": tokenized_targets["input_ids"],
-    }
+    # Load tokenizer and model
+    model_name = "distilbert-base-uncased"
+    tokenizer = DistilBertTokenizer.from_pretrained(model_name)
+    model = DistilBertForQuestionAnswering.from_pretrained(model_name).to(device)
 
-# Fine-tune the model
-def fine_tune_model(data_dir, output_dir, model_name="t5-small", epochs=3, batch_size=8):
-    # Load the tokenizer and model
-    tokenizer = T5Tokenizer.from_pretrained(model_name)
-    model = T5ForConditionalGeneration.from_pretrained(model_name)
+    # Load QA pairs
+    qa_pairs = load_qa_pairs(args.input_dir)
+    print(f"Loaded {len(qa_pairs)} QA pairs")
 
-    # Load and preprocess the dataset
-    qa_pairs = load_dataset(data_dir)
-    processed_data = preprocess_dataset(qa_pairs, tokenizer)
-
-    # Convert to Hugging Face Dataset
-    dataset = Dataset.from_dict(processed_data)
+    # Create dataset
+    dataset = MathQADataset(qa_pairs, tokenizer)
 
     # Define training arguments
     training_args = TrainingArguments(
-        output_dir=output_dir,
-        overwrite_output_dir=True,
-        num_train_epochs=epochs,
-        per_device_train_batch_size=batch_size,
-        save_steps=500,
-        save_total_limit=2,
-        logging_dir=os.path.join(output_dir, "logs"),
-        logging_steps=100,
-        evaluation_strategy="no",  # No evaluation during training
-        learning_rate=5e-5,
-        weight_decay=0.01,
+        output_dir=args.tmp_dir,
+        num_train_epochs=3,
+        per_device_train_batch_size=8,  # Adjusted for M4 with 32GB RAM
+        per_device_eval_batch_size=8,
         warmup_steps=500,
-        fp16=torch.cuda.is_available(),  # Use mixed precision if GPU is available
+        weight_decay=0.01,
+        logging_dir=os.path.join(args.tmp_dir, "logs"),
+        logging_steps=100,
+        save_steps=1000,
+        save_total_limit=2,
+        fp16=False,  # MPS does not support fp16; use full precision
+        dataloader_num_workers=0,  # Set to 0 to avoid multiprocessing issues on macOS
+        remove_unused_columns=False,
     )
 
-    # Define the Trainer
+    # Initialize trainer
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -71,23 +122,11 @@ def fine_tune_model(data_dir, output_dir, model_name="t5-small", epochs=3, batch
     # Fine-tune the model
     print("Starting fine-tuning...")
     trainer.train()
-    print("Fine-tuning completed.")
 
-    # Save the fine-tuned model and tokenizer
-    model.save_pretrained(output_dir)
-    tokenizer.save_pretrained(output_dir)
-    print(f"Fine-tuned model saved to {output_dir}.")
+    # Save the final model
+    print(f"Saving final model to {args.output_dir}")
+    model.save_pretrained(args.output_dir)
+    tokenizer.save_pretrained(args.output_dir)
 
 if __name__ == "__main__":
-    # Set up argument parsing
-    parser = argparse.ArgumentParser(description="Fine-tune a small language model for math QA.")
-    parser.add_argument("-d", "--data_dir", required=True, help="Directory containing QA pairs in JSON format.")
-    parser.add_argument("-o", "--output_dir", required=True, help="Directory to save the fine-tuned model.")
-    parser.add_argument("-m", "--model_name", default="t5-small", help="Name of the pre-trained model to fine-tune.")
-    parser.add_argument("-e", "--epochs", type=int, default=3, help="Number of training epochs.")
-    parser.add_argument("-b", "--batch_size", type=int, default=8, help="Training batch size.")
-    args = parser.parse_args()
-
-    # Run the fine-tuning process
-    fine_tune_model(args.data_dir, args.output_dir, args.model_name, args.epochs, args.batch_size)
-    
+    main()
