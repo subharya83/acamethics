@@ -1,0 +1,85 @@
+{
+    "qa_pairs": [
+        {
+            "question": "What is a prime number?",
+            "answer": "a natural number greater than 1 that has no positive divisors other than 1 and itself",
+            "context": "A prime number is a natural number greater than 1 that has no positive divisors other than 1 and itself. The first few prime numbers are 2, 3, 5, 7, 11, and 13."
+        },
+        {
+            "question": "What are the first six prime numbers?",
+            "answer": "2, 3, 5, 7, 11, and 13",
+            "context": "A prime number is a natural number greater than 1 that has no positive divisors other than 1 and itself. The first few prime numbers are 2, 3, 5, 7, 11, and 13."
+        },
+        {
+            "question": "What is the sum of angles in a triangle?",
+            "answer": "the sum of interior angles in a triangle is always 180 degrees",
+            "context": "One of the most fundamental properties of triangles is that the sum of interior angles in a triangle is always 180 degrees. This can be proven by drawing a line parallel to one side through the opposite vertex."
+        },
+        {
+            "question": "How can you prove that triangle angles sum to 180 degrees?",
+            "answer": "by drawing a line parallel to one side through the opposite vertex",
+            "context": "One of the most fundamental properties of triangles is that the sum of interior angles in a triangle is always 180 degrees. This can be proven by drawing a line parallel to one side through the opposite vertex."
+        },
+        {
+            "question": "What is the Pythagorean theorem?",
+            "answer": "the square of the hypotenuse equals the sum of the squares of the other two sides",
+            "context": "The Pythagorean theorem states that in a right triangle, the square of the hypotenuse equals the sum of the squares of the other two sides. If the sides are a, b and the hypotenuse is c, then a squared plus b squared equals c squared."
+        },
+        {
+            "question": "What is the formula for the area of a circle?",
+            "answer": "the area equals pi multiplied by the radius squared",
+            "context": "For any circle, the area equals pi multiplied by the radius squared. If the radius of a circle is 5 cm, then its area is approximately 78.54 square centimeters."
+        },
+        {
+            "question": "What is the area of a circle with radius 5 cm?",
+            "answer": "approximately 78.54 square centimeters",
+            "context": "For any circle, the area equals pi multiplied by the radius squared. If the radius of a circle is 5 cm, then its area is approximately 78.54 square centimeters."
+        },
+        {
+            "question": "What is a fraction?",
+            "answer": "a fraction represents a part of a whole and is written as one number over another",
+            "context": "In mathematics, a fraction represents a part of a whole and is written as one number over another. The top number is called the numerator and the bottom number is called the denominator."
+        },
+        {
+            "question": "What is the top number of a fraction called?",
+            "answer": "The top number is called the numerator",
+            "context": "In mathematics, a fraction represents a part of a whole and is written as one number over another. The top number is called the numerator and the bottom number is called the denominator."
+        },
+        {
+            "question": "What is the perimeter of a rectangle?",
+            "answer": "the perimeter is two times the sum of its length and width",
+            "context": "For a rectangle, the perimeter is two times the sum of its length and width. A rectangle with length 8 cm and width 5 cm has a perimeter of 26 cm."
+        },
+        {
+            "question": "What is a ratio?",
+            "answer": "compares two quantities by division and shows how many times one value contains another",
+            "context": "A ratio compares two quantities by division and shows how many times one value contains another. Ratios can be written as fractions, with a colon, or using the word to."
+        },
+        {
+            "question": "How can ratios be written?",
+            "answer": "as fractions, with a colon, or using the word to",
+            "context": "A ratio compares two quantities by division and shows how many times one value contains another. Ratios can be written as fractions, with a colon, or using the word to."
+        },
+        {
+            "question": "What is an equation in mathematics?",
+            "answer": "a statement that two expressions are equal, connected by an equals sign",
+            "context": "An equation is a statement that two expressions are equal, connected by an equals sign. Solving an equation means finding the value of the unknown variable that makes the equation true."
+        },
+        {
+            "question": "What does solving an equation mean?",
+            "answer": "finding the value of the unknown variable that makes the equation true",
+            "context": "An equation is a statement that two expressions are equal, connected by an equals sign. Solving an equation means finding the value of the unknown variable that makes the equation true."
+        },
+        {
+            "question": "What is the pattern in the sequence 1, 3, 6, 10, 15?",
+            "answer": "each number is obtained by adding the next consecutive natural number to the previous term",
+            "context": "Triangular numbers form the sequence 1, 3, 6, 10, 15, 21 and so on. In this sequence each number is obtained by adding the next consecutive natural number to the previous term. The tenth triangular number is 55."
+        }
+    ],
+    "total_pairs": 15,
+    "metadata": {
+        "description": "Sample QA pairs for testing the Acamethics pipeline",
+        "level": "middle and high school mathematics",
+        "note": "Every answer is a verbatim substring of its context for extractive QA compatibility"
+    }
+}
