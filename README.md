@@ -2,263 +2,270 @@
 
 A toolkit for generating question-answer pairs from middle and high school math
 textbook PDFs and fine-tuning a small language model to answer those questions.
-The system has three components that form a complete pipeline: generate, train,
-and query.
+The system has three main scripts forming a complete pipeline (generate, train,
+query) plus supporting utilities for validation and testing.
+
+## Quick Start
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the smoke test to verify everything works
+python smoke_test.py
+```
+
+## Repository Layout
+
+```
+.
+├── genQA.py              # PDF to QA pair generation (two-pass)
+├── fineTuneSLM.py        # DistilBERT fine-tuning for extractive QA
+├── querySLM.py           # Inference CLI / web server with auto-retrieval
+├── validate_schema.py    # Standalone JSON schema checker
+├── smoke_test.py         # End-to-end pipeline smoke test
+├── requirements.txt      # Python dependencies
+├── sample_data/
+│   └── sample_qa.json    # 15 ready-to-use math QA pairs
+└── README.md
+```
+
+## Pipeline Overview
+
+The pipeline has four stages. The diagram below shows how data flows between
+them.
+
+```mermaid
+flowchart LR
+    A[/PDF Textbook/] --> B[genQA.py]
+    B --> C[/QA Pairs JSON/]
+    B --> D[/Chunk Index JSON/]
+    C --> E{validate_schema.py}
+    E --> F[fineTuneSLM.py]
+    F --> G[(DistilBERT Model)]
+    F --> H[/eval_report.json/]
+    G --> I[querySLM.py]
+    D --> I
+    I --> J[/Answers/]
+```
+
+All three main scripts use the same model family consistently:
+
+| Stage | Model | Type |
+|---|---|---|
+| QA Generation (genQA) | T5-QA-QG or FLAN-T5 | Text-to-text (generative) |
+| Answer Extraction (genQA -x) | DistilBERT-SQuAD | Extractive QA |
+| Fine-tuning (fineTuneSLM) | DistilBERT | Extractive QA |
+| Inference (querySLM) | DistilBERT | Extractive QA |
+
+The generation step uses a T5 model to create questions and optionally a
+DistilBERT model to extract answers. An **extractive filter** ensures every
+answer is a verbatim substring of its context, guaranteeing compatibility with
+the downstream fine-tuning step. The fine-tuning and query steps both operate on
+DistilBERT, so saved weights are fully compatible.
 
 ## Components
 
 ### 1. QA Generator (`genQA.py`)
 
-Two-pass system that reads a PDF textbook, extracts text, generates QA pairs
-using a T5-family model, and then validates and enhances them.
-
-- Content-aware chunking with mathematical sequence preservation
-- Extractive + generative answer strategies
-- Quality scoring, deduplication, and automatic filtering
-- Two model options (T5-QA-QG and FLAN-T5)
-
-### 2. Fine-tuning (`fineTuneSLM.py`)
-
-Fine-tunes a DistilBERT extractive QA model on the generated QA pairs.
-
-- Filters out samples whose answers cannot be mapped to token positions
-- Evaluation via the SQuAD metric (F1 / Exact Match)
-- Supports checkpoint resume, gradient accumulation, and FP16
-
-### 3. Query Interface (`querySLM.py`)
-
-Loads the fine-tuned DistilBERT model for inference in CLI or web-server mode.
-
-- Batched inference for file-based queries
-- Minimal web GUI with a `/health` endpoint
-- REST API at `/query`
-
-## Installation
-
-```bash
-pip install torch transformers pdfplumber evaluate sentencepiece \
-            scikit-learn tqdm flask numpy
-```
-
-Or use the provided requirements file:
-
-```bash
-pip install -r requirements.txt
-```
-
-### `requirements.txt`
+Two-pass system that reads a PDF, generates QA pairs, validates them, and
+exports both a QA JSON and an optional chunk index for retrieval.
 
 ```
-torch>=1.9.0
-transformers>=4.20.0
-pdfplumber>=0.7.0
-evaluate>=0.4.0
-sentencepiece>=0.1.97
-scikit-learn>=1.1.0
-tqdm>=4.64.0
-flask>=2.2.0
-numpy>=1.22.0
+python genQA.py -i textbook.pdf -o qa_pairs.json -m 1 -x --export-chunks chunks.json
 ```
 
-## Usage
-
-### 1. Generate QA Pairs from a PDF
-
 ```
-usage: genQA.py [-h] -i INPUT -o OUTPUT [-w WEIGHTS] [-m {0,1}] [-x]
-                [--enhance-only ENHANCE_ONLY]
-
-Two-pass QA pair generator with enhancement
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -i INPUT, --input INPUT
-                        Path to input PDF file
-  -o OUTPUT, --output OUTPUT
-                        Path for output JSON file
-  -w WEIGHTS, --weights WEIGHTS
-                        Directory to store model weights (default: weights)
-  -m {0,1}, --model {0,1}
-                        Model choice: 0=T5-QA-QG (default), 1=FLAN-T5
-  -x, --extractive      Enable extractive QA model for better answer generation
-  --enhance-only ENHANCE_ONLY
-                        Path to existing JSON file to enhance (skip Pass 1)
+Arguments:
+  -i, --input           Path to input PDF file
+  -o, --output          Path for output JSON file
+  -w, --weights         Directory to store model weights (default: weights)
+  -m, --model {0,1}     0=T5-QA-QG (default), 1=FLAN-T5
+  -x, --extractive      Enable extractive QA for better answers
+  --export-chunks PATH  Save chunk index JSON (used by querySLM for retrieval)
+  --enhance-only PATH   Enhance an existing JSON instead of generating from PDF
 ```
 
-#### Model Recommendations
+**Pass 1** extracts text, splits it into content-aware chunks, generates
+questions with the T5 model, and produces answers via extractive and/or
+generative methods. A deduplication step removes near-identical QA pairs, and an
+**extractive filter** drops any pair whose answer is not a verbatim substring of
+the context.
 
-- **Best quality:** `-m 1 -x` (FLAN-T5 + extractive QA)
+**Pass 2** validates question and answer quality, scores each pair, filters out
+low-quality entries (score below 0.4), and tags each pair with question type,
+difficulty level, and topic keywords.
+
+The `--export-chunks` flag saves the chunk index as a separate JSON file. This
+file is consumed by `querySLM.py` to enable automatic context retrieval so users
+do not need to paste context manually.
+
+#### Model Options
+
+- **Best quality:** `-m 1 -x` (FLAN-T5 + extractive)
 - **Speed:** `-m 0` (T5 small, no extractive)
-- **Balanced:** `-m 0 -x` (T5 small + extractive QA)
+- **Balanced:** `-m 0 -x` (T5 small + extractive)
 
-> The original BART-CNN option (`-m 1` in older versions) was a
-> summarization model that could not generate questions. It has been
-> replaced by FLAN-T5.
+### 2. Schema Validator (`validate_schema.py`)
 
-#### Examples
+Standalone script that checks JSON files before they enter fine-tuning.
 
 ```bash
-# Full two-pass generation with best quality
-python3 genQA.py -i textbook.pdf -o output.json -m 1 -x -w ./weights
+# Validate a single file
+python validate_schema.py sample_data/sample_qa.json
 
-# Enhancement-only mode (improve an existing JSON)
-python3 genQA.py -i dummy -o enhanced.json --enhance-only existing_qa.json
+# Validate a directory of files
+python validate_schema.py training_data/
 
-# Fast generation
-python3 genQA.py -i textbook.pdf -o output.json -m 0 -w ./weights
+# Strict mode (exit 1 if any pair fails)
+python validate_schema.py --strict training_data/
 ```
 
-#### Two-Pass System
+Checks performed on each pair: required keys present (question, answer,
+context), non-empty strings, answer is a verbatim substring of context, question
+ends with `?`, answer has at least 3 words.
 
-**Pass 1 -- Generation**
-1. Extract and clean text from the PDF.
-2. Split into overlapping content-aware chunks.
-3. Classify each chunk (definition, sequence, explanation, etc.).
-4. Generate questions with the T5 model.
-5. Extract or generate answers (extractive preferred).
-6. Deduplicate near-identical QA pairs.
+### 3. Fine-tuning (`fineTuneSLM.py`)
 
-**Pass 2 -- Enhancement**
-1. Validate question and answer quality.
-2. Score each pair on multiple criteria.
-3. Filter out low-quality pairs (score < 0.4).
-4. Tag with question type, difficulty level, and topic keywords.
-
-#### Output Format
-
-```json
-{
-    "qa_pairs": [
-        {
-            "question": "What is a triangular number?",
-            "answer": "A triangular number is formed by adding consecutive natural numbers.",
-            "context": "Triangular numbers are 1, 3, 6, 10, 15...",
-            "source": "extractive",
-            "content_type": "definition",
-            "key_concepts": ["triangular", "sequence", "numbers"],
-            "model_used": "google/flan-t5-base",
-            "quality_score": 0.85,
-            "question_type": "definition",
-            "difficulty_level": "basic",
-            "topic_keywords": ["pattern", "sequence", "number"]
-        }
-    ],
-    "total_pairs": 150,
-    "metadata": { ... },
-    "quality_stats": { ... }
-}
-```
-
-### 2. Fine-tune the Model
+Fine-tunes a DistilBERT extractive QA model on the generated QA pairs. Includes
+schema validation, post-training text-level evaluation, and an evaluation report.
 
 ```
-usage: fineTuneSLM.py [-h] -i INPUT_DIR -t TMP_DIR -w OUTPUT_DIR
-                      [--resume-from RESUME_FROM] [--num-epochs NUM_EPOCHS]
-                      [--batch-size BATCH_SIZE] [--learning-rate LEARNING_RATE]
-                      [--gradient-accumulation-steps STEPS]
+python fineTuneSLM.py -i training_data -t checkpoints -w model_output
 ```
 
-The fine-tuning script trains a **DistilBERT** extractive QA model. Samples
-whose answers cannot be located inside their context are automatically skipped.
+```
+Arguments:
+  -i, --input-dir                   Directory containing JSON files
+  -t, --tmp-dir                     Directory for training checkpoints
+  -w, --output-dir                  Directory for the final model
+  --resume-from PATH                Resume from a checkpoint
+  --num-epochs N                    Training epochs (default: 3)
+  --batch-size N                    Batch size (default: 8)
+  --learning-rate F                 Learning rate (default: 2e-5)
+  --gradient-accumulation-steps N   Gradient accumulation (default: 1)
+```
+
+After training, the script:
+
+1. Runs Trainer evaluation (position-level SQuAD F1/EM)
+2. Runs **text-level evaluation** that decodes predicted spans to text and
+   computes token-level F1 and exact match on the validation set
+3. Saves an `eval_report.json` alongside the model with both metric sets and
+   dataset statistics
+
+### 4. Query Interface (`querySLM.py`)
+
+Loads the fine-tuned DistilBERT model for inference. Supports automatic context
+retrieval via a TF-IDF index over chunks exported by `genQA.py`.
+
+```
+python querySLM.py -m model_output --mode server --chunk-index chunks.json
+```
+
+```
+Arguments:
+  -m, --model_dir       Directory containing the fine-tuned model
+  --mode {cli,server}   Run mode (default: cli)
+  --chunk-index PATH    Chunk index JSON for automatic context retrieval
+  -i, --input           Input file (CLI mode)
+  -o, --output          Output file (CLI mode)
+  --port N              Server port (default: 5000)
+```
+
+When `--chunk-index` is provided, the system builds a TF-IDF index over all
+chunks at startup. For each question (whether from the CLI, the web GUI, or the
+REST API), the retriever finds the top-3 most relevant chunks and the model
+extracts an answer from the best-matching one. Users no longer need to paste
+context manually.
+
+#### CLI mode
+
+Input file format (one entry per line):
+
+```
+What is a prime number?
+What is the Pythagorean theorem?	In a right triangle the square of the hypotenuse equals the sum of the squares of the other two sides.
+```
+
+Plain questions get context auto-retrieved (if `--chunk-index` is set).
+Questions with a tab-separated context use that context directly.
 
 ```bash
-# Basic fine-tuning
-python3 fineTuneSLM.py -i ./qa_data -t ./checkpoints -w ./fine_tuned_model
-
-# Custom hyperparameters with gradient accumulation
-python3 fineTuneSLM.py -i ./qa_data -t ./checkpoints -w ./fine_tuned_model \
-    --num-epochs 5 --batch-size 16 --learning-rate 3e-5 \
-    --gradient-accumulation-steps 2
-
-# Resume from a previous checkpoint
-python3 fineTuneSLM.py -i ./qa_data -t ./checkpoints -w ./fine_tuned_model \
-    --resume-from ./previous_model --num-epochs 2
+python querySLM.py -m ./model --mode cli -i questions.txt -o answers.txt --chunk-index chunks.json
 ```
 
-The input directory should contain one or more JSON files in the same format
-produced by `genQA.py`.
-
-### 3. Query the Model
-
-```
-usage: querySLM.py [-h] -m MODEL_DIR [--mode {cli,server}]
-                   [-i INPUT] [-o OUTPUT] [--port PORT]
-```
-
-The query script loads the **DistilBERT** model saved by `fineTuneSLM.py`.
-Because it is an extractive QA model, you must provide both a question and a
-context passage for best results.
-
-#### CLI Mode
-
-The input file should contain one entry per line. Each line is either a plain
-question or a question and context separated by a tab character:
-
-```
-What is the sum of angles in a triangle?	The sum of angles in a triangle is 180 degrees.
-```
+#### Server mode
 
 ```bash
-python3 querySLM.py -m ./fine_tuned_model --mode cli -i questions.txt -o answers.txt
+python querySLM.py -m ./model --mode server --port 8080 --chunk-index chunks.json
 ```
 
-#### Web Server Mode
+Endpoints:
+
+- `GET /` -- web GUI (context field is optional when retrieval is enabled)
+- `POST /query` -- JSON API: `{"question": "...", "context": "..."}`
+- `GET /health` -- returns model status and whether retrieval is enabled
+
+### 5. Smoke Test (`smoke_test.py`)
+
+Runs the full pipeline end-to-end using `sample_data/sample_qa.json` to verify
+everything works before you commit to a real PDF.
 
 ```bash
-python3 querySLM.py -m ./fine_tuned_model --mode server --port 8080
+python smoke_test.py [--sample-data path/to/sample_qa.json]
 ```
 
-The web interface is available at `http://localhost:8080` and accepts both a
-question and a context passage. A REST endpoint is available at `/query`:
+Tests performed:
 
-```bash
-curl -X POST http://localhost:8080/query \
-     -H "Content-Type: application/json" \
-     -d '{"question": "What is a prime number?", "context": "A prime number has exactly two factors: 1 and itself."}'
-```
+1. Schema validation of sample data
+2. Fine-tuning for 1 epoch on CPU
+3. Text-level evaluation on the validation split
+4. Single-question inference
+5. TF-IDF chunk retrieval
 
-A health check endpoint is available at `/health`.
+Runs in under 5 minutes on CPU. No GPU or PDF required.
 
 ## Complete Workflow
 
 ```bash
-# 1. Generate QA pairs from a textbook PDF
-python3 genQA.py -i math_textbook.pdf -o qa_pairs.json -m 1 -x -w ./weights
+# 1. Generate QA pairs and chunk index from a textbook
+python genQA.py -i textbook.pdf -o qa_pairs.json -m 1 -x \
+    -w ./weights --export-chunks chunks.json
 
-# 2. (Optional) Run enhancement on existing data
-python3 genQA.py -i dummy -o enhanced.json --enhance-only qa_pairs.json
+# 2. Validate the output before training
+python validate_schema.py qa_pairs.json
 
-# 3. Fine-tune the model
+# 3. Fine-tune (creates model + eval_report.json)
 mkdir -p training_data
-cp enhanced.json training_data/
-python3 fineTuneSLM.py -i training_data -t ./checkpoints -w ./math_model \
+cp qa_pairs.json training_data/
+python fineTuneSLM.py -i training_data -t ./checkpoints -w ./math_model \
     --num-epochs 5 --batch-size 16
 
-# 4a. Interactive web interface
-python3 querySLM.py -m ./math_model --mode server
+# 4a. Interactive web interface with auto-retrieval
+python querySLM.py -m ./math_model --mode server --chunk-index chunks.json
 
 # 4b. Batch processing
-python3 querySLM.py -m ./math_model --mode cli -i questions.txt -o answers.txt
+python querySLM.py -m ./math_model --mode cli \
+    -i questions.txt -o answers.txt --chunk-index chunks.json
 ```
 
-## Architecture Notes
+## Sample Data
 
-All three scripts now use the same model family consistently:
-
-| Stage | Model | Type |
-|---|---|---|
-| QA Generation (genQA) | T5-QA-QG or FLAN-T5 | Text-to-text (generative) |
-| Answer Extraction (genQA, -x) | DistilBERT-SQuAD | Extractive QA |
-| Fine-tuning (fineTuneSLM) | DistilBERT | Extractive QA |
-| Inference (querySLM) | DistilBERT | Extractive QA |
-
-The generation step uses a T5 model to create questions and optionally a
-DistilBERT model to extract answers. The fine-tuning and query steps both
-operate on DistilBERT, so saved weights are fully compatible.
+The repository includes `sample_data/sample_qa.json` with 15 middle/high-school
+math QA pairs. Every answer is a verbatim substring of its context, making them
+ready for fine-tuning without any preprocessing. Use this file to test the
+pipeline or as a template for creating your own training data manually.
 
 ## Technical Requirements
 
 - **Python:** 3.8+
 - **Memory:** 8 GB RAM minimum, 16 GB+ recommended for large PDFs
-- **Storage:** ~5 GB for model weights
+- **Storage:** approximately 5 GB for model weights
 - **GPU:** Optional but recommended (CUDA or Apple MPS supported)
+
+Install all dependencies:
+
+```bash
+pip install -r requirements.txt
+```
