@@ -21,12 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class ChunkRetriever:
-    """Lightweight TF-IDF retriever over a chunk index.
-
-    Given a chunk index JSON (exported by genQA.py --export-chunks), this
-    class builds an in-memory TF-IDF index and retrieves the top-k most
-    relevant chunks for any query string.
-    """
+    """Lightweight TF-IDF retriever over a chunk index."""
 
     def __init__(self, chunk_index_path: str):
         with open(chunk_index_path, "r", encoding="utf-8") as f:
@@ -38,14 +33,10 @@ class ChunkRetriever:
         self._tokenized = [self._tokenize(c["text"]) for c in self.chunks]
         self._idf = self._compute_idf()
         self._tfidf_vecs = [self._tfidf(tokens) for tokens in self._tokenized]
-        logger.info(
-            "ChunkRetriever loaded %d chunks from %s",
-            len(self.chunks), chunk_index_path,
-        )
+        logger.info("ChunkRetriever loaded %d chunks", len(self.chunks))
 
     @staticmethod
     def _tokenize(text: str) -> List:
-        """Simple whitespace + lowercasing tokenizer."""
         return re.findall(r"[a-z0-9]+", text.lower())
 
     def _compute_idf(self) -> dict:
@@ -74,11 +65,6 @@ class ChunkRetriever:
         return dot / (na * nb)
 
     def retrieve(self, query: str, top_k: int = 3) -> list:
-        """Return top_k chunks most relevant to the query.
-
-        Returns:
-            list of dicts, each with 'text', 'score', and original chunk fields.
-        """
         q_tokens = self._tokenize(query)
         q_vec = self._tfidf(q_tokens)
         scored = []
@@ -97,8 +83,6 @@ class ChunkRetriever:
 # ---------------------------------------------------------------------------
 
 class SLMQuery:
-    """Query a fine-tuned DistilBERT extractive QA model."""
-
     def __init__(self, model_dir: str, chunk_retriever: ChunkRetriever = None):
         self.model_dir = model_dir
         self.retriever = chunk_retriever
@@ -114,7 +98,11 @@ class SLMQuery:
 
     def _load_model(self):
         try:
-            tokenizer = DistilBertTokenizer.from_pretrained(self.model_dir)
+            # FIXED: Use fast tokenizer
+            tokenizer = DistilBertTokenizer.from_pretrained(
+                self.model_dir, 
+                use_fast=True
+            )
             model = DistilBertForQuestionAnswering.from_pretrained(self.model_dir)
             logger.info("Loaded model from %s", self.model_dir)
             return tokenizer, model
@@ -123,12 +111,13 @@ class SLMQuery:
             raise ValueError(f"Failed to load model from {self.model_dir}")
 
     def _extract_answer(self, question: str, context: str, max_length: int = 512) -> str:
-        """Run extractive QA on a single (question, context) pair."""
         self.model.eval()
         inputs = self.tokenizer(
             question.strip(), context.strip(),
-            max_length=max_length, padding="max_length",
-            truncation=True, return_tensors="pt",
+            max_length=max_length, 
+            padding="max_length",
+            truncation=True, 
+            return_tensors="pt",
         ).to(self.device)
 
         with torch.no_grad():
@@ -141,24 +130,13 @@ class SLMQuery:
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
 
     def answer(self, question: str, context: str = "", top_k: int = 3) -> dict:
-        """Answer a question, optionally retrieving context automatically.
-
-        If context is provided, it is used directly.  Otherwise, if a
-        ChunkRetriever is available, the top_k most relevant chunks are
-        retrieved and the best answer across them is returned.
-
-        Returns:
-            dict with 'answer', 'context_used', and optionally 'retrieved_chunks'.
-        """
         if not question.strip():
             return {"answer": "No question provided.", "context_used": ""}
 
-        # If context provided explicitly, use it
         if context.strip():
             ans = self._extract_answer(question, context)
             return {"answer": ans, "context_used": context.strip()}
 
-        # If retriever is available, find context automatically
         if self.retriever:
             retrieved = self.retriever.retrieve(question, top_k=top_k)
             best_answer = ""
@@ -174,24 +152,15 @@ class SLMQuery:
                 "retrieved_chunks": retrieved,
             }
 
-        # No context and no retriever
         return {
-            "answer": "No context provided and no chunk index loaded. "
-                      "Please provide context or use --chunk-index.",
+            "answer": "No context provided and no chunk index loaded.",
             "context_used": "",
         }
 
     def answer_batch(self, qa_items: list, top_k: int = 3) -> list:
-        """Batch answer a list of items."""
         return [self.answer(item["question"], item.get("context", ""), top_k) for item in qa_items]
 
     def answer_from_file(self, input_file: str, output_file: str, top_k: int = 3):
-        """Process questions from a file.
-
-        Input format: one entry per line.
-          - Plain question (context auto-retrieved if retriever available)
-          - question<TAB>context (explicit context)
-        """
         if not os.path.isfile(input_file):
             raise ValueError(f"Input file {input_file} does not exist")
 
@@ -239,7 +208,8 @@ def run_server(args):
     @app.route("/health", methods=["GET"])
     def health():
         return jsonify({
-            "status": "ok", "model_dir": args.model_dir,
+            "status": "ok", 
+            "model_dir": args.model_dir,
             "device": str(slm.device),
             "chunk_retrieval": has_retriever,
         })
@@ -273,7 +243,7 @@ def run_server(args):
             has_retriever=has_retriever,
         )
 
-    logger.info("Starting server on port %d (retrieval=%s)", args.port, has_retriever)
+    logger.info("Starting server on port %d", args.port)
     app.run(host="0.0.0.0", port=args.port, threaded=True)
 
 
@@ -282,50 +252,30 @@ HTML_TEMPLATE = """
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Math QA</title>
+    <title>Math QA - Acamethics</title>
     <style>
-        body { font-family: sans-serif; max-width: 750px; margin: 40px auto; padding: 0 20px; }
-        textarea, input[type=text] { width: 100%; padding: 8px; margin: 4px 0 12px 0; box-sizing: border-box; }
-        input[type=submit] { padding: 8px 24px; cursor: pointer; }
-        .result { background: #f4f4f4; padding: 16px; border-radius: 4px; margin-top: 16px; }
-        .chunk { background: #eef; padding: 10px; border-radius: 4px; margin: 6px 0; font-size: 0.9em; }
-        .note { color: #666; font-size: 0.85em; margin-bottom: 12px; }
+        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 8px 0; }
+        input[type=submit] { padding: 12px 30px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        .result { background: #f0f0f0; padding: 20px; border-radius: 8px; margin-top: 20px; }
     </style>
 </head>
 <body>
-    <h1>Math QA</h1>
-    {% if has_retriever %}
-    <p class="note">Chunk retrieval is enabled. You can leave the context field empty and
-    the system will automatically find the most relevant passage.</p>
-    {% else %}
-    <p class="note">No chunk index loaded. Provide context below, or restart the server
-    with --chunk-index to enable automatic retrieval.</p>
-    {% endif %}
+    <h1>Math QA System</h1>
     <form method="post">
-        <label for="question">Question:</label>
-        <input type="text" id="question" name="question" placeholder="e.g. What is a prime number?"
-               value="{{ question or '' }}">
-        <label for="context">Context (optional if retrieval is enabled):</label>
-        <textarea id="context" name="context" rows="4"
-                  placeholder="Paste the relevant text here, or leave empty for auto-retrieval...">{{ context or '' }}</textarea>
-        <input type="submit" value="Submit">
+        <label>Question:</label><br>
+        <input type="text" name="question" placeholder="Ask a math question..." value="{{ question or '' }}">
+        <label>Context (optional):</label><br>
+        <textarea name="context" rows="4" placeholder="Paste context here...">{{ context or '' }}</textarea>
+        <input type="submit" value="Get Answer">
     </form>
     {% if answer %}
     <div class="result">
         <h2>Answer:</h2>
         <p>{{ answer }}</p>
         {% if context_used %}
-        <h3>Context used:</h3>
-        <p style="font-size:0.9em; color:#444;">{{ context_used[:500] }}{% if context_used|length > 500 %}...{% endif %}</p>
-        {% endif %}
-        {% if retrieved %}
-        <h3>Retrieved chunks:</h3>
-        {% for chunk in retrieved %}
-        <div class="chunk">
-            <strong>Score: {{ chunk.score }}</strong> ({{ chunk.content_type }})<br>
-            {{ chunk.text[:300] }}{% if chunk.text|length > 300 %}...{% endif %}
-        </div>
-        {% endfor %}
+        <h3>Context Used:</h3>
+        <p style="font-size:0.9em;">{{ context_used[:400] }}...</p>
         {% endif %}
     </div>
     {% endif %}
@@ -333,18 +283,13 @@ HTML_TEMPLATE = """
 </html>
 """
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Query a fine-tuned DistilBERT model for math QA.")
     parser.add_argument("-m", "--model_dir", required=True, help="Directory containing the fine-tuned model.")
     parser.add_argument("--mode", choices=["cli", "server"], default="cli")
-    parser.add_argument("--chunk-index", default=None,
-                        help="Path to chunk index JSON (from genQA.py --export-chunks). "
-                             "Enables automatic context retrieval.")
-    # CLI
-    parser.add_argument("-i", "--input", help="Input file with questions (CLI mode).")
-    parser.add_argument("-o", "--output", help="Output file for answers (CLI mode).")
-    # Server
+    parser.add_argument("--chunk-index", default=None, help="Path to chunk index JSON")
+    parser.add_argument("-i", "--input", help="Input file (CLI mode)")
+    parser.add_argument("-o", "--output", help="Output file (CLI mode)")
     parser.add_argument("--port", type=int, default=5000)
 
     args = parser.parse_args()
